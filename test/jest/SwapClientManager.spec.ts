@@ -1,12 +1,15 @@
 import Config from '../../lib/Config';
+import ConnextClient from '../../lib/connextclient/ConnextClient';
 import { SwapClientType } from '../../lib/constants/enums';
 import DB from '../../lib/db/DB';
+import LndClient from '../../lib/lndclient/LndClient';
 import Logger from '../../lib/Logger';
 import SwapClient from '../../lib/swaps/SwapClient';
 import SwapClientManager from '../../lib/swaps/SwapClientManager';
 import { UnitConverter } from '../../lib/utils/UnitConverter';
 import { OwnLimitOrder } from '../../lib/orderbook/types';
 import { errorCodes } from '../../lib/swaps/errors';
+import NodeKey from '../../lib/nodekey/NodeKey';
 
 jest.mock('../../lib/db/DB', () => {
   return jest.fn().mockImplementation(() => {
@@ -25,9 +28,13 @@ jest.mock('../../lib/Logger', () => {
     return {
       createSubLogger: () => {},
       info: () => {},
+      error: () => {},
+      debug: () => {},
     };
   });
 });
+const logger = new Logger({});
+
 jest.mock('../../lib/nodekey/NodeKey');
 const mockLndPubKey = 1;
 const lndInfoMock = jest.fn(() => Promise.resolve());
@@ -37,6 +44,7 @@ const mockLndOpenChannel = jest.fn();
 jest.mock('../../lib/lndclient/LndClient', () => {
   return jest.fn().mockImplementation(() => {
     return {
+      logger,
       on: onListenerMock,
       init: () => Promise.resolve(),
       pubKey: mockLndPubKey,
@@ -52,10 +60,12 @@ jest.mock('../../lib/lndclient/LndClient', () => {
 });
 const tokenAddresses = new Map<string, string>();
 jest.mock('../../lib/swaps/SwapClient');
+const mockedLndClient = <jest.Mock<LndClient>><any>LndClient;
 const mockedSwapClient = <jest.Mock<SwapClient>><any>SwapClient;
+const mockedNodeKey = <jest.Mock<NodeKey>><any>NodeKey;
+const nodeKey = new mockedNodeKey();
+nodeKey.childSeed = jest.fn();
 
-const logger = new Logger({});
-logger.error = jest.fn();
 const loggers = {
   global: logger,
   db: logger,
@@ -123,7 +133,7 @@ describe('Swaps.SwapClientManager', () => {
     expect(swapClientManager.get('BTC')).not.toBeUndefined();
     expect(swapClientManager.get('LTC')).not.toBeUndefined();
     expect(swapClientManager['swapClients'].size).toEqual(2);
-    const lndClients = swapClientManager.getLndClientsMap();
+    const { lndClients } = swapClientManager;
     expect(lndClients.size).toEqual(2);
     expect(lndClients.get('BTC')!.pubKey).toEqual(1);
     expect(lndClients.get('LTC')!.pubKey).toEqual(1);
@@ -396,6 +406,120 @@ describe('Swaps.SwapClientManager', () => {
       };
 
       await expect(swapClientManager.checkSwapCapacities(order)).rejects.toHaveProperty('code', errorCodes.SWAP_CLIENT_NOT_FOUND);
+    });
+  });
+
+  describe('unlockWallets', () => {
+    const connextClient = new mockedSwapClient() as ConnextClient;
+    connextClient.isConnected = jest.fn().mockReturnValue(true);
+    connextClient.init = jest.fn();
+
+    test('returns successful unlocks for BTC and LTC', async () => {
+      const btcClient = new mockedLndClient();
+      btcClient.currency = 'BTC';
+      btcClient.isWaitingUnlock = jest.fn().mockReturnValue(true);
+      btcClient['unlockWallet'] = jest.fn().mockResolvedValue(true);
+      const ltcClient = new mockedLndClient();
+      ltcClient.currency = 'LTC';
+      ltcClient.isWaitingUnlock = jest.fn().mockReturnValue(true);
+      ltcClient['unlockWallet'] = jest.fn().mockResolvedValue(true);
+
+      swapClientManager.swapClients.set('BTC', btcClient);
+      swapClientManager.swapClients.set('LTC', ltcClient);
+
+      const unlockResult = await swapClientManager.unlockWallets({
+        nodeKey,
+        walletPassword: 'wasspord',
+        connextSeed: 'seed',
+      });
+
+      expect(unlockResult.connextReady).toBeFalsy();
+      expect(unlockResult.unlockedLndClients).toContain('BTC');
+      expect(unlockResult.unlockedLndClients).toContain('LTC');
+    });
+
+    test('returns successful unlocks for BTC, LTC, and Connext', async () => {
+      const btcClient = new mockedLndClient();
+      btcClient.currency = 'BTC';
+      btcClient.isWaitingUnlock = jest.fn().mockReturnValue(true);
+      btcClient['unlockWallet'] = jest.fn().mockResolvedValue(true);
+      const ltcClient = new mockedLndClient();
+      ltcClient.currency = 'LTC';
+      ltcClient.isWaitingUnlock = jest.fn().mockReturnValue(true);
+      ltcClient['unlockWallet'] = jest.fn().mockResolvedValue(true);
+
+      swapClientManager.swapClients.set('BTC', btcClient);
+      swapClientManager.swapClients.set('LTC', ltcClient);
+      swapClientManager.swapClients.set('ETH', connextClient);
+      swapClientManager.connextClient = connextClient;
+
+      const unlockResult = await swapClientManager.unlockWallets({
+        nodeKey,
+        walletPassword: 'wasspord',
+        connextSeed: 'seed',
+      });
+
+      expect(unlockResult.connextReady).toBeTruthy();
+      expect(unlockResult.unlockedLndClients).toContain('BTC');
+      expect(unlockResult.unlockedLndClients).toContain('LTC');
+    });
+
+    test('returns successful unlocks for already unlocked BTC, LTC, and Connext', async () => {
+      const btcClient = new mockedLndClient();
+      btcClient.currency = 'BTC';
+      btcClient.isWaitingUnlock = jest.fn().mockReturnValue(true);
+      btcClient.isConnected = jest.fn().mockReturnValue(true);
+      btcClient['unlockWallet'] = jest.fn().mockResolvedValue(true);
+      const ltcClient = new mockedLndClient();
+      ltcClient.currency = 'LTC';
+      ltcClient.isWaitingUnlock = jest.fn().mockReturnValue(false);
+      ltcClient.isConnected = jest.fn().mockReturnValue(true);
+      ltcClient['unlockWallet'] = jest.fn().mockResolvedValue(true);
+
+      swapClientManager.swapClients.set('BTC', btcClient);
+      swapClientManager.swapClients.set('LTC', ltcClient);
+      swapClientManager.swapClients.set('ETH', connextClient);
+      swapClientManager.connextClient = connextClient;
+
+      const unlockResult = await swapClientManager.unlockWallets({
+        nodeKey,
+        walletPassword: 'wasspord',
+        connextSeed: 'seed',
+      });
+
+      expect(unlockResult.connextReady).toBeTruthy();
+      expect(unlockResult.unlockedLndClients).toContain('BTC');
+      expect(unlockResult.unlockedLndClients).toContain('LTC');
+    });
+
+    test('returns successful unlocks for BTC and Connext, unsuccessful for LTC', async () => {
+      const btcClient = new mockedLndClient();
+      btcClient.currency = 'BTC';
+      btcClient.isWaitingUnlock = jest.fn().mockReturnValue(true);
+      btcClient['unlockWallet'] = jest.fn().mockResolvedValue(true);
+      const ltcClient = new mockedLndClient();
+      ltcClient.currency = 'LTC';
+      ltcClient.isWaitingUnlock = jest.fn().mockReturnValue(true);
+      ltcClient['unlockWallet'] = jest.fn().mockRejectedValue('error');
+
+      swapClientManager.swapClients.set('BTC', btcClient);
+      swapClientManager.swapClients.set('LTC', ltcClient);
+      swapClientManager.swapClients.set('ETH', connextClient);
+      swapClientManager.connextClient = connextClient;
+
+      const unlockResult = await swapClientManager.unlockWallets({
+        nodeKey,
+        walletPassword: 'wasspord',
+        connextSeed: 'seed',
+      });
+
+      expect(unlockResult.connextReady).toBeTruthy();
+      expect(unlockResult.unlockedLndClients).toContain('BTC');
+      expect(unlockResult.lockedLndClients).toContain('LTC');
+    });
+
+    afterEach(() => {
+      jest.clearAllMocks();
     });
   });
 });

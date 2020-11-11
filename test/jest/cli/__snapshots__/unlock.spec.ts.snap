@@ -1,0 +1,37 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`formatOutput should show LTC as locked 1`] = `
+Array [
+  Array [
+    "xud was unlocked successfully",
+  ],
+  Array [
+    "The following wallets are unlocked and ready: BTC",
+  ],
+  Array [
+    "The following wallets could not be unlocked: LTC",
+  ],
+]
+`;
+
+exports[`formatOutput should show unlock successfully with just BTC 1`] = `
+Array [
+  Array [
+    "xud was unlocked successfully",
+  ],
+  Array [
+    "The following wallets are unlocked and ready: BTC",
+  ],
+]
+`;
+
+exports[`formatOutput should show unlock successfully with just BTC, LTC, and ETH (connext) 1`] = `
+Array [
+  Array [
+    "xud was unlocked successfully",
+  ],
+  Array [
+    "The following wallets are unlocked and ready: BTC, LTC, ETH",
+  ],
+]
+`;

@@ -72,6 +72,7 @@ class GrpcInitService {
       const response = new xudrpc.UnlockNodeResponse();
       response.setUnlockedLndsList(unlockNodeResult.unlockedLndClients);
       response.setLockedLndsList(unlockNodeResult.lockedLndClients);
+      response.setConnextReady(unlockNodeResult.connextReady);
 
       callback(null, response);
     } catch (err) {

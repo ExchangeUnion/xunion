@@ -1996,6 +1996,11 @@
             "type": "string"
           },
           "description": "The list of lnd clients that could not be unlocked."
+        },
+        "connext_ready": {
+          "type": "boolean",
+          "format": "boolean",
+          "description": "Whether the Connext client is connected and ready to accept calls."
         }
       }
     },

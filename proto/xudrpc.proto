@@ -966,6 +966,8 @@ message UnlockNodeResponse {
   repeated string unlocked_lnds = 1;
   // The list of lnd clients that could not be unlocked.
   repeated string locked_lnds = 3;
+  // Whether the Connext client is connected and ready to accept calls.
+  bool connext_ready = 4;
 }
 
 message WithdrawRequest {

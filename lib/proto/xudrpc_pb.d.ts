@@ -2233,6 +2233,9 @@ export class UnlockNodeResponse extends jspb.Message {
     setLockedLndsList(value: Array<string>): void;
     addLockedLnds(value: string, index?: number): string;
 
+    getConnextReady(): boolean;
+    setConnextReady(value: boolean): void;
+
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): UnlockNodeResponse.AsObject;
@@ -2248,6 +2251,7 @@ export namespace UnlockNodeResponse {
     export type AsObject = {
         unlockedLndsList: Array<string>,
         lockedLndsList: Array<string>,
+        connextReady: boolean,
     }
 }
 

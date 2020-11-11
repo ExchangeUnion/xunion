@@ -1423,6 +1423,7 @@
 | ----- | ---- | ----- | ----------- |
 | unlocked_lnds | [string](#string) | repeated | The list of lnd clients that were unlocked. |
 | locked_lnds | [string](#string) | repeated | The list of lnd clients that could not be unlocked. |
+| connext_ready | [bool](#bool) |  | Whether the Connext client is connected and ready to accept calls. |
 
 
 

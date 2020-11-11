@@ -9,10 +9,14 @@ export const describe = 'unlock local xud node';
 
 export const builder = {};
 
-const formatOutput = (response: UnlockNodeResponse.AsObject) => {
+export const formatOutput = (response: UnlockNodeResponse.AsObject) => {
   console.log('xud was unlocked successfully');
-  if (response.unlockedLndsList.length) {
-    console.log(`The following wallets were unlocked: ${response.unlockedLndsList.join(', ')}`);
+  const readyClients = response.unlockedLndsList;
+  if (response.connextReady) {
+    readyClients.push('ETH');
+  }
+  if (readyClients.length) {
+    console.log(`The following wallets are unlocked and ready: ${readyClients.join(', ')}`);
   }
   if (response.lockedLndsList.length) {
     console.log(`The following wallets could not be unlocked: ${response.lockedLndsList.join(', ')}`);
