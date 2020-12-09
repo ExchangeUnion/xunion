@@ -1,8 +1,8 @@
 diff --git a/lib/Xud.ts b/lib/Xud.ts
-index 489a50a4..f9391527 100644
+index d83880e0..1b95a77a 100644
 --- a/lib/Xud.ts
 +++ b/lib/Xud.ts
-@@ -87,6 +87,11 @@ class Xud extends EventEmitter {
+@@ -88,6 +88,11 @@ class Xud extends EventEmitter {
        this.logger.info('config file loaded');
      }
  
@@ -12,8 +12,8 @@ index 489a50a4..f9391527 100644
 +    }
 +
      try {
-       if (!this.config.rpc.disable) {
-         // start rpc server first, it will respond with UNAVAILABLE error
+       if (this.config.instanceid === 0) {
+         // if we're not running with multiple instances as indicated by an instance id of 0
 diff --git a/lib/swaps/SwapRecovery.ts b/lib/swaps/SwapRecovery.ts
 index 3759f6a3..4089dc94 100644
 --- a/lib/swaps/SwapRecovery.ts
@@ -39,10 +39,10 @@ index 3759f6a3..4089dc94 100644
    }
  
 diff --git a/lib/swaps/Swaps.ts b/lib/swaps/Swaps.ts
-index 9648e02b..0e850119 100644
+index c6946347..730cf781 100644
 --- a/lib/swaps/Swaps.ts
 +++ b/lib/swaps/Swaps.ts
-@@ -730,6 +730,24 @@ class Swaps extends EventEmitter {
+@@ -699,6 +699,24 @@ class Swaps extends EventEmitter {
      } else if (deal.state === SwapState.Active) {
        // we check that the deal is still active before we try to settle the invoice
        try {
@@ -67,7 +67,7 @@ index 9648e02b..0e850119 100644
          await swapClient.settleInvoice(rHash, rPreimage, currency);
        } catch (err) {
          this.logger.error(`could not settle invoice for deal ${rHash}`, err);
-@@ -750,7 +768,9 @@ class Swaps extends EventEmitter {
+@@ -719,7 +737,9 @@ class Swaps extends EventEmitter {
                } catch (err) {
                  this.logger.error(`could not settle invoice for deal ${rHash}`, err);
                }
@@ -78,7 +78,7 @@ index 9648e02b..0e850119 100644
            });
            await settleRetryPromise;
          } else {
-@@ -774,6 +794,16 @@ class Swaps extends EventEmitter {
+@@ -743,6 +763,16 @@ class Swaps extends EventEmitter {
     * accepted, initiates the swap.
     */
    private handleSwapAccepted = async (responsePacket: packets.SwapAcceptedPacket, peer: Peer) => {
@@ -95,7 +95,7 @@ index 9648e02b..0e850119 100644
      assert(responsePacket.body, 'SwapAcceptedPacket does not contain a body');
      const { quantity, rHash, makerCltvDelta } = responsePacket.body;
      const deal = this.getDeal(rHash);
-@@ -861,6 +891,11 @@ class Swaps extends EventEmitter {
+@@ -830,6 +860,11 @@ class Swaps extends EventEmitter {
  
      try {
        await makerSwapClient.sendPayment(deal);
@@ -107,7 +107,7 @@ index 9648e02b..0e850119 100644
      } catch (err) {
        // first we must handle the edge case where the maker has paid us but failed to claim our payment
        // in this case, we've already marked the swap as having been paid and completed
-@@ -1042,6 +1077,18 @@ class Swaps extends EventEmitter {
+@@ -1011,6 +1046,18 @@ class Swaps extends EventEmitter {
  
        this.logger.debug('Executing maker code to resolve hash');
  
@@ -126,7 +126,7 @@ index 9648e02b..0e850119 100644
        const swapClient = this.swapClientManager.get(deal.takerCurrency)!;
  
        // we update the phase persist the deal to the database before we attempt to send payment
-@@ -1052,6 +1099,13 @@ class Swaps extends EventEmitter {
+@@ -1021,6 +1068,13 @@ class Swaps extends EventEmitter {
        assert(deal.state !== SwapState.Error, `cannot send payment for failed swap ${deal.rHash}`);
  
        try {
@@ -140,7 +140,7 @@ index 9648e02b..0e850119 100644
          deal.rPreimage = await swapClient.sendPayment(deal);
        } catch (err) {
          this.logger.debug(`sendPayment in resolveHash for swap ${deal.rHash} failed due to ${err.message}`);
-@@ -1129,10 +1183,22 @@ class Swaps extends EventEmitter {
+@@ -1098,10 +1152,22 @@ class Swaps extends EventEmitter {
          }
        }
  
@@ -164,7 +164,7 @@ index 9648e02b..0e850119 100644
        return deal.rPreimage;
      } else {
        // If we are here we are the taker
-@@ -1140,6 +1206,16 @@ class Swaps extends EventEmitter {
+@@ -1109,6 +1175,16 @@ class Swaps extends EventEmitter {
        assert(htlcCurrency === undefined || htlcCurrency === deal.takerCurrency, 'incoming htlc does not match expected deal currency');
        this.logger.debug('Executing taker code to resolve hash');
  
@@ -181,7 +181,7 @@ index 9648e02b..0e850119 100644
        return deal.rPreimage;
      }
    }
-@@ -1308,8 +1384,11 @@ class Swaps extends EventEmitter {
+@@ -1277,8 +1353,11 @@ class Swaps extends EventEmitter {
          swapClient.removeInvoice(deal.rHash).catch(this.logger.error); // we don't need to await the remove invoice call
        }
      } else if (deal.phase === SwapPhase.SendingPayment) {
@@ -195,7 +195,7 @@ index 9648e02b..0e850119 100644
      }
  
      this.logger.trace(`emitting swap.failed event for ${deal.rHash}`);
-@@ -1373,9 +1452,14 @@ class Swaps extends EventEmitter {
+@@ -1343,9 +1422,14 @@ class Swaps extends EventEmitter {
  
          if (deal.role === SwapRole.Maker) {
            // the maker begins execution of the swap upon accepting the deal

@@ -35,9 +35,9 @@ class Xud extends EventEmitter {
   public service!: Service;
   private logger!: Logger;
   private config: Config;
-  private db!: DB;
-  private pool!: Pool;
-  private orderBook!: OrderBook;
+  private db?: DB;
+  private pool?: Pool;
+  private orderBook?: OrderBook;
   private rpcServer?: GrpcServer;
   private httpServer?: HttpServer;
   private grpcAPIProxy?: GrpcWebProxyServer;
@@ -46,6 +46,7 @@ class Xud extends EventEmitter {
   private swapClientManager?: SwapClientManager;
   private unitConverter?: UnitConverter;
   private simnetChannels$?: Subscription;
+  private lockFilePath?: string;
 
   /**
    * Create an Exchange Union daemon.
@@ -88,6 +89,24 @@ class Xud extends EventEmitter {
     }
 
     try {
+      if (this.config.instanceid === 0) {
+        // if we're not running with multiple instances as indicated by an instance id of 0
+        // create a lock file to prevent multiple xud instances from trying to run
+        // with the same node key and/or database
+        const lockFilePath = path.join(this.config.xudir, `${this.config.network}.lock`);
+        try {
+          await (await fs.open(lockFilePath, 'wx')).close();
+          this.lockFilePath = lockFilePath;
+        } catch (err) {
+          if (err.code === 'EEXIST') {
+            this.logger.error(`A lock file exists at ${lockFilePath}. Another xud process is running or a previous process exited ungracefully.`);
+            return;
+          } else {
+            throw err;
+          }
+        }
+      }
+
       if (!this.config.rpc.disable) {
         // start rpc server first, it will respond with UNAVAILABLE error
         // indicating xud is starting until xud finishes initializing
@@ -284,6 +303,10 @@ class Xud extends EventEmitter {
     // TODO: ensure we are not in the middle of executing any trades
     const closePromises: Promise<void>[] = [];
 
+    if (this.lockFilePath) {
+      closePromises.push(fs.unlink(this.lockFilePath).catch(this.logger.error));
+    }
+
     this.simnetChannels$?.unsubscribe();
 
     if (this.swapClientManager) {
@@ -306,7 +329,7 @@ class Xud extends EventEmitter {
     }
     await Promise.all(closePromises);
 
-    await this.db.close();
+    await this.db?.close();
     this.logger.info('XUD shutdown gracefully');
 
     this.emit('shutdown');

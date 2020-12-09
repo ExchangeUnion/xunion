@@ -61,11 +61,11 @@ describe('P2P Sanity Tests', () => {
 
     await Promise.all([nodeOne.start(nodeOneConfig), nodeTwo.start(nodeTwoConfig)]);
 
-    nodeOnePubKey = nodeOne['pool'].nodePubKey;
-    nodeTwoPubKey = nodeTwo['pool'].nodePubKey;
+    nodeOnePubKey = nodeOne['pool']!.nodePubKey;
+    nodeTwoPubKey = nodeTwo['pool']!.nodePubKey;
 
-    nodeTwoPort = nodeTwo['pool']['listenPort']!;
-    nodeOneUri = toUri({ nodePubKey: nodeOnePubKey, host: 'localhost', port: nodeOne['pool']['listenPort']! });
+    nodeTwoPort = nodeTwo['pool']!['listenPort']!;
+    nodeOneUri = toUri({ nodePubKey: nodeOnePubKey, host: 'localhost', port: nodeOne['pool']!['listenPort']! });
     nodeTwoUri = toUri({ nodePubKey: nodeTwoPubKey, host: 'localhost', port: nodeTwoPort });
 
     unusedPort = await getUnusedPort();
@@ -82,13 +82,13 @@ describe('P2P Sanity Tests', () => {
 
   it('should update the node state', (done) => {
     const btcPubKey = '0395033b252c6f40e3756984162d68174e2bd8060a129c0d3462a9370471c6d28f';
-    const nodeTwoPeer = nodeOne['pool'].getPeer(nodeTwoPubKey);
+    const nodeTwoPeer = nodeOne['pool']!.getPeer(nodeTwoPubKey);
     nodeTwoPeer.on('nodeStateUpdate', () => {
       expect(nodeTwoPeer['nodeState']!.lndPubKeys['BTC']).to.equal(btcPubKey);
       done();
     });
 
-    nodeTwo['pool'].updateLndState({
+    nodeTwo['pool']!.updateLndState({
       currency: 'BTC',
       pubKey: btcPubKey,
     });
@@ -100,7 +100,7 @@ describe('P2P Sanity Tests', () => {
   });
 
   it('should disconnect successfully', async () => {
-    await nodeOne['pool']['closePeer'](nodeTwoPubKey, DisconnectionReason.NotAcceptingConnections);
+    await nodeOne['pool']!['closePeer'](nodeTwoPubKey, DisconnectionReason.NotAcceptingConnections);
 
     const listPeersResult = nodeOne.service.listPeers();
     expect(listPeersResult).to.be.empty;

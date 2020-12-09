@@ -111,7 +111,7 @@ describe('API Service', () => {
   });
 
   it('should remove an order', () => {
-    const tp = xud['orderBook'].tradingPairs.get('LTC/BTC')!;
+    const tp = xud['orderBook']!.tradingPairs.get('LTC/BTC')!;
     expect(tp.ownOrders.buyMap.has(orderId!)).to.be.true;
     const args = {
       orderId: '1',
