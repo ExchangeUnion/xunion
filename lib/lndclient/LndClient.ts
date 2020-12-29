@@ -45,9 +45,25 @@ interface LndClient {
   emit(event: 'initialized'): boolean;
 }
 
+type ChannelCapacities = {
+  totalOutboundAmount: number;
+  totalInboundAmount: number;
+  balance: number;
+  inactiveBalance: number;
+  pendingOpenBalance: number;
+};
+
 const GRPC_CLIENT_OPTIONS = {
   'grpc.ssl_target_name_override': 'localhost',
   'grpc.default_authority': 'localhost',
+};
+const LND_FAILURE_REASON_REVERSE_LOOKUP = {
+  0: 'NONE',
+  1: 'TIMEOUT',
+  2: 'NO_ROUTE',
+  3: 'ERROR',
+  4: 'INCORRECT_PAYMENT_DETAILS',
+  5: 'INSUFFICIENT_BALANCE',
 };
 
 /** A class representing a client to interact with lnd. */
@@ -79,8 +95,7 @@ class LndClient extends SwapClient {
   private initRetryTimeout?: NodeJS.Timeout;
   private totalOutboundAmount = 0;
   private totalInboundAmount = 0;
-  private maxChannelOutboundAmount = 0;
-  private maxChannelInboundAmount = 0;
+  private refreshChannelCapacitiesPromise?: Promise<ChannelCapacities>;
 
   private initWalletResolve?: (value: boolean) => void;
   private watchMacaroonResolve?: (value: boolean) => void;
@@ -89,6 +104,7 @@ class LndClient extends SwapClient {
     BTC: 10,
     LTC: 2.5,
   };
+  private static MAX_PARTS = 5;
 
   /**
    * Creates an lnd client.
@@ -244,8 +260,8 @@ class LndClient extends SwapClient {
   };
 
   protected updateCapacity = async () => {
-    await this.channelBalance().catch(async (err) => {
-      this.logger.error('failed to update total outbound capacity', err);
+    await this.swapCapacities().catch(async (err) => {
+      this.logger.error('failed to update swap amount capacities', err);
     });
   };
 
@@ -575,6 +591,7 @@ class LndClient extends SwapClient {
   };
 
   public sendSmallestAmount = async (rHash: string, destination: string): Promise<string> => {
+    // TODO: as of lnd 0.12.0, this won't work as PaymentAddr will be required and the only way to specify it will be with the pay req
     const request = this.buildSendRequest({
       rHash,
       destination,
@@ -590,34 +607,38 @@ class LndClient extends SwapClient {
 
   public sendPayment = async (deal: SwapDeal): Promise<string> => {
     assert(deal.state === SwapState.Active);
-    let request: lndrouter.SendPaymentRequest;
-    assert(deal.makerCltvDelta, 'swap deal must have a makerCltvDelta');
+    assert(deal.destination, 'swap deal as taker must have a destination');
+    let amount: number;
+    let finalCltvDelta: number;
+    let cltvLimit: number | undefined;
+
     if (deal.role === SwapRole.Taker) {
       // we are the taker paying the maker
-      assert(deal.destination, 'swap deal as taker must have a destination');
-      request = this.buildSendRequest({
-        rHash: deal.rHash,
-        destination: deal.destination,
-        amount: deal.makerAmount,
-        // Using the agreed upon makerCltvDelta. Maker won't accept
-        // our payment if we provide a smaller value.
-        finalCltvDelta: deal.makerCltvDelta,
-      });
+      assert(deal.makerCltvDelta, 'swap deal must have a makerCltvDelta');
+      amount = deal.makerAmount;
+
+      // Using the agreed upon makerCltvDelta. Maker won't accept
+      // our payment if we provide a smaller value.
+      finalCltvDelta = deal.makerCltvDelta;
     } else {
       // we are the maker paying the taker
-      assert(deal.takerPubKey, 'swap deal as maker must have a takerPubKey');
       assert(deal.takerCltvDelta, 'swap deal as maker must have a takerCltvDelta');
-      request = this.buildSendRequest({
-        rHash: deal.rHash,
-        destination: deal.takerPubKey,
-        amount: deal.takerAmount,
-        finalCltvDelta: deal.takerCltvDelta,
-        // Enforcing the maximum duration/length of the payment by specifying
-        // the cltvLimit. We add 3 blocks to offset the block padding set by lnd.
-        cltvLimit: deal.takerMaxTimeLock! + 3,
-      });
+      amount = deal.takerAmount;
+      finalCltvDelta = deal.takerCltvDelta;
+
+      // Enforcing the maximum duration/length of the payment by specifying
+      // the cltvLimit. We add 3 blocks to offset the block padding set by lnd.
+      cltvLimit = deal.takerMaxTimeLock! + 3;
     }
-    this.logger.debug(`sending payment of ${request.getAmt()} with hash ${deal.rHash}`);
+    const request = this.buildSendRequest({
+      amount,
+      finalCltvDelta,
+      cltvLimit,
+      destination: deal.destination,
+      rHash: deal.rHash,
+      payReq: deal.payReq,
+    });
+    this.logger.debug(`sending payment of ${amount} with hash ${deal.rHash}`);
     const preimage = await this.sendPaymentV2(request);
     return preimage;
   };
@@ -649,7 +670,7 @@ class LndClient extends SwapClient {
               case lndrpc.PaymentFailureReason.FAILURE_REASON_NO_ROUTE:
               case lndrpc.PaymentFailureReason.FAILURE_REASON_ERROR:
               case lndrpc.PaymentFailureReason.FAILURE_REASON_INSUFFICIENT_BALANCE:
-                reject(swapErrors.FINAL_PAYMENT_ERROR(lndrpc.PaymentFailureReason[response.getFailureReason()]));
+                reject(swapErrors.FINAL_PAYMENT_ERROR(LND_FAILURE_REASON_REVERSE_LOOKUP[response.getFailureReason()]));
                 break;
               case lndrpc.PaymentFailureReason.FAILURE_REASON_INCORRECT_PAYMENT_DETAILS:
                 reject(swapErrors.PAYMENT_REJECTED);
@@ -693,26 +714,39 @@ class LndClient extends SwapClient {
     amount,
     finalCltvDelta,
     cltvLimit,
+    payReq,
   }: {
     rHash: string;
     destination: string;
     amount: number;
     finalCltvDelta: number;
     cltvLimit?: number;
+    payReq?: string;
   }): lndrouter.SendPaymentRequest => {
     const request = new lndrouter.SendPaymentRequest();
-    request.setPaymentHash(Buffer.from(rHash, 'hex'));
-    request.setDest(Buffer.from(destination, 'hex'));
-    request.setAmt(amount);
-    request.setFinalCltvDelta(finalCltvDelta);
-    request.setTimeoutSeconds(MAX_PAYMENT_TIME / 1000);
-    const fee = Math.floor(MAX_FEE_RATIO * request.getAmt());
-    request.setFeeLimitSat(fee);
+    if (payReq) {
+      request.setPaymentRequest(payReq);
+      request.setMaxParts(LndClient.MAX_PARTS);
+    } else {
+      // TODO: as of lnd 0.12.0, this won't work as PaymentAddr will be required and the only way to specify it will be with the pay req
+      request.setPaymentHash(Buffer.from(rHash, 'hex'));
+      request.setDest(Buffer.from(destination, 'hex'));
+      request.setAmt(amount);
+      request.setFinalCltvDelta(finalCltvDelta);
+      request.setMaxParts(1);
+    }
+
     if (cltvLimit) {
       // cltvLimit is used to enforce the maximum
       // duration/length of the payment.
       request.setCltvLimit(cltvLimit);
     }
+
+    request.setTimeoutSeconds(MAX_PAYMENT_TIME / 1000);
+
+    const fee = Math.floor(MAX_FEE_RATIO * amount);
+    request.setFeeLimitSat(fee);
+
     return request;
   };
 
@@ -741,82 +775,79 @@ class LndClient extends SwapClient {
   };
 
   /**
-   * Updates all balances related to channels including active, inactive, and pending balances.
-   * Sets trading limits for this client accordingly.
+   * Updates and returns all capacities & balances related to channels including
+   * active, inactive, and pending balances. Sets trading limits for this client accordingly.
    */
-  private updateChannelBalances = async () => {
-    const [channels, pendingChannels] = await Promise.all([this.listChannels(), this.pendingChannels()]);
+  private refreshChannelCapacities = async (): Promise<ChannelCapacities> => {
+    // if we already have a pending refresh capacities call, then we reuse that one
+    // rather than have multiple or duplicate requests to lnd for channel balance
+    // info in parallel
+    if (this.refreshChannelCapacitiesPromise) {
+      return this.refreshChannelCapacitiesPromise;
+    }
+    this.updateCapacityTimer?.refresh();
 
-    let maxOutbound = 0;
-    let maxInbound = 0;
-    let balance = 0;
-    let inactiveBalance = 0;
-    let totalOutboundAmount = 0;
-    let totalInboundAmount = 0;
-    channels.toObject().channelsList.forEach((channel) => {
-      if (channel.active) {
-        balance += channel.localBalance;
-        const outbound = Math.max(0, channel.localBalance - channel.localChanReserveSat);
-        totalOutboundAmount += outbound;
-        if (maxOutbound < outbound) {
-          maxOutbound = outbound;
+    this.refreshChannelCapacitiesPromise = Promise.all([this.listChannels(), this.pendingChannels()])
+      .then(([channels, pendingChannels]) => {
+        let balance = 0;
+        let inactiveBalance = 0;
+        let totalOutboundAmount = 0;
+        let totalInboundAmount = 0;
+        channels.toObject().channelsList.forEach((channel) => {
+          if (channel.active) {
+            balance += channel.localBalance;
+            const outbound = Math.max(0, channel.localBalance - channel.localChanReserveSat);
+            totalOutboundAmount += outbound;
+
+            const inbound = Math.max(0, channel.remoteBalance - channel.remoteChanReserveSat);
+            totalInboundAmount += inbound;
+          } else {
+            inactiveBalance += channel.localBalance;
+          }
+        });
+
+        if (this.totalOutboundAmount !== totalOutboundAmount) {
+          this.totalOutboundAmount = totalOutboundAmount;
+          this.logger.debug(`new channel total outbound capacity: ${totalOutboundAmount}`);
         }
 
-        const inbound = Math.max(0, channel.remoteBalance - channel.remoteChanReserveSat);
-        totalInboundAmount += inbound;
-        if (maxInbound < inbound) {
-          maxInbound = inbound;
+        if (this.totalInboundAmount !== totalInboundAmount) {
+          this.totalInboundAmount = totalInboundAmount;
+          this.logger.debug(`new channel total inbound capacity: ${totalInboundAmount}`);
         }
-      } else {
-        inactiveBalance += channel.localBalance;
-      }
-    });
 
-    if (this.maxChannelOutboundAmount !== maxOutbound) {
-      this.maxChannelOutboundAmount = maxOutbound;
-      this.logger.debug(`new channel maximum outbound capacity: ${maxOutbound}`);
-    }
+        const pendingOpenBalance = pendingChannels
+          .toObject()
+          .pendingOpenChannelsList.reduce(
+            (sum, pendingChannel) => sum + (pendingChannel.channel?.localBalance ?? 0),
+            0,
+          );
 
-    if (this.maxChannelInboundAmount !== maxInbound) {
-      this.maxChannelInboundAmount = maxInbound;
-      this.logger.debug(`new channel inbound capacity: ${maxInbound}`);
-    }
+        return {
+          totalOutboundAmount,
+          totalInboundAmount,
+          balance,
+          inactiveBalance,
+          pendingOpenBalance,
+        };
+      })
+      .finally(() => {
+        this.refreshChannelCapacitiesPromise = undefined;
+      });
 
-    if (this.totalOutboundAmount !== totalOutboundAmount) {
-      this.totalOutboundAmount = totalOutboundAmount;
-      this.logger.debug(`new channel total outbound capacity: ${totalOutboundAmount}`);
-    }
-
-    if (this.totalInboundAmount !== totalInboundAmount) {
-      this.totalInboundAmount = totalInboundAmount;
-      this.logger.debug(`new channel total inbound capacity: ${totalInboundAmount}`);
-    }
-
-    const pendingOpenBalance = pendingChannels
-      .toObject()
-      .pendingOpenChannelsList.reduce((sum, pendingChannel) => sum + (pendingChannel.channel?.localBalance ?? 0), 0);
-
-    return {
-      maxOutbound,
-      maxInbound,
-      totalOutboundAmount,
-      totalInboundAmount,
-      balance,
-      inactiveBalance,
-      pendingOpenBalance,
-    };
+    return this.refreshChannelCapacitiesPromise;
   };
 
   public channelBalance = async (): Promise<ChannelBalance> => {
-    const { balance, inactiveBalance, pendingOpenBalance } = await this.updateChannelBalances();
+    const { balance, inactiveBalance, pendingOpenBalance } = await this.refreshChannelCapacities();
     return { balance, inactiveBalance, pendingOpenBalance };
   };
 
   public swapCapacities = async (): Promise<SwapCapacities> => {
-    const { maxOutbound, maxInbound, totalInboundAmount, totalOutboundAmount } = await this.updateChannelBalances(); // get fresh balances
+    const { totalInboundAmount, totalOutboundAmount } = await this.refreshChannelCapacities(); // get fresh balances
     return {
-      maxOutboundChannelCapacity: maxOutbound,
-      maxInboundChannelCapacity: maxInbound,
+      maxOutboundChannelCapacity: totalOutboundAmount,
+      maxInboundChannelCapacity: totalInboundAmount,
       totalOutboundCapacity: totalOutboundAmount,
       totalInboundCapacity: totalInboundAmount,
     };
@@ -928,8 +959,22 @@ class LndClient extends SwapClient {
   };
 
   public getRoute = async (units: bigint, destination: string, _currency: string, finalLock = this.finalLock) => {
+    await this.refreshChannelCapacities();
+    if (this.totalOutboundAmount < units) {
+      // if we don't have enough balance for this payment, we don't even try to find a route
+      throw swapErrors.INSUFFICIENT_BALANCE;
+    }
+
     const request = new lndrpc.QueryRoutesRequest();
-    request.setAmt(Number(units));
+    // lnd does not currently support a way to find route(s) using multi path payments
+    // since we attempt to use up to multi path payments, we only check if there's any route
+    // that can support at least one part of the payment, as well as a check above to ensure
+    // we have sufficient balance across all channels to make the payment. This is opposed
+    // to attempting to replicate lnd's multi path payment route finding logic here, which
+    // would be complex and potentially slow/expensive or even impossible given that we don't
+    // have access to the lnd internal database and graph.
+    const minPartSize = Number(units) / LndClient.MAX_PARTS;
+    request.setAmt(minPartSize);
     request.setFinalCltvDelta(finalLock);
     request.setPubKey(destination);
     const fee = new lndrpc.FeeLimit();
@@ -951,7 +996,7 @@ class LndClient extends SwapClient {
         (!err.message.includes('unable to find a path to destination') && !err.message.includes('target not found'))
       ) {
         this.logger.error(
-          `error calling queryRoutes to ${destination}, amount ${units}, finalCltvDelta ${finalLock}`,
+          `error calling queryRoutes to ${destination}, amount ${minPartSize}, finalCltvDelta ${finalLock}`,
           err,
         );
         throw err;
@@ -960,10 +1005,12 @@ class LndClient extends SwapClient {
 
     if (route) {
       this.logger.debug(
-        `found a route to ${destination} for ${units} units with finalCltvDelta ${finalLock}: ${route}`,
+        `found a route to ${destination} for ${minPartSize} units with finalCltvDelta ${finalLock}: ${route}`,
       );
     } else {
-      this.logger.debug(`could not find a route to ${destination} for ${units} units with finalCltvDelta ${finalLock}`);
+      this.logger.debug(
+        `could not find a route to ${destination} for ${minPartSize} units with finalCltvDelta ${finalLock}`,
+      );
     }
     return route;
   };
@@ -1097,9 +1144,11 @@ class LndClient extends SwapClient {
     addHoldInvoiceRequest.setHash(hexToUint8Array(rHash));
     addHoldInvoiceRequest.setValue(Number(units));
     addHoldInvoiceRequest.setCltvExpiry(expiry);
-    await this.addHoldInvoice(addHoldInvoiceRequest);
+    const response = await this.addHoldInvoice(addHoldInvoiceRequest);
     this.logger.debug(`added invoice of ${units} for ${rHash} with cltvExpiry ${expiry}`);
     this.subscribeSingleInvoice(rHash);
+
+    return response.getPaymentRequest();
   };
 
   public settleInvoice = async (rHash: string, rPreimage: string) => {

@@ -442,8 +442,13 @@ describe('Parser', () => {
       pairId: uuid(),
       orderId: uuid(),
       takerCltvDelta: 10,
+      payReq:
+        'lnbc420n1p06uxnfpp5hxq94vpge8kpxj76hghn4uk940w38hjy5wpzqdzupmyajczhgyssdqqcqzpgsp57nj39u8wz0hkjs2pszlvcqysgvttk9039dnw3zv6evlywu37uy7q9qy9qsqjp4vqexungwscl6mkdx5eejf6rf09c0red8g8hzh4qrh0yzwuudzssv3yndmpsacaczxfwkevp3h4yf5wk5xqkwnf0s8nlhdvedydpsqsa7a8y',
     };
     testValidPacket(new packets.SwapRequestPacket(swapRequestPacketBody));
+    testValidPacket(
+      new packets.SwapRequestPacket(removeUndefinedProps({ ...swapRequestPacketBody, payReq: undefined })),
+    );
     testInvalidPacket(new packets.SwapRequestPacket(swapRequestPacketBody, uuid()));
     testInvalidPacket(
       new packets.SwapRequestPacket(
@@ -478,26 +483,31 @@ describe('Parser', () => {
       rHash,
       quantity: 10,
       makerCltvDelta: 10,
+      payReq:
+        'lnbc420n1p06uxnfpp5hxq94vpge8kpxj76hghn4uk940w38hjy5wpzqdzupmyajczhgyssdqqcqzpgsp57nj39u8wz0hkjs2pszlvcqysgvttk9039dnw3zv6evlywu37uy7q9qy9qsqjp4vqexungwscl6mkdx5eejf6rf09c0red8g8hzh4qrh0yzwuudzssv3yndmpsacaczxfwkevp3h4yf5wk5xqkwnf0s8nlhdvedydpsqsa7a8y',
     };
     testValidPacket(new packets.SwapAcceptedPacket(swapAcceptedPacketBody, uuid()));
+    testValidPacket(
+      new packets.SwapAcceptedPacket(removeUndefinedProps({ ...swapAcceptedPacketBody, payReq: undefined }), uuid()),
+    );
     testInvalidPacket(new packets.SwapAcceptedPacket(swapAcceptedPacketBody));
     testInvalidPacket(
-      new packets.SwapAcceptedPacket(removeUndefinedProps({ ...swapAcceptedPacketBody, rHash: undefined })),
+      new packets.SwapAcceptedPacket(removeUndefinedProps({ ...swapAcceptedPacketBody, rHash: undefined }), uuid()),
     );
     testInvalidPacket(
-      new packets.SwapAcceptedPacket(removeUndefinedProps({ ...swapAcceptedPacketBody, quantity: undefined })),
+      new packets.SwapAcceptedPacket(removeUndefinedProps({ ...swapAcceptedPacketBody, quantity: undefined }), uuid()),
     );
-    testInvalidPacket(new packets.SwapAcceptedPacket(removeUndefinedProps({ ...swapAcceptedPacketBody, quantity: 0 })));
+    testInvalidPacket(
+      new packets.SwapAcceptedPacket(removeUndefinedProps({ ...swapAcceptedPacketBody, quantity: 0 }), uuid()),
+    );
     testInvalidPacket(
       new packets.SwapAcceptedPacket(
-        removeUndefinedProps({
-          ...swapAcceptedPacketBody,
-          makerCltvDelta: undefined,
-        }),
+        removeUndefinedProps({ ...swapAcceptedPacketBody, makerCltvDelta: undefined }),
+        uuid(),
       ),
     );
     testInvalidPacket(
-      new packets.SwapAcceptedPacket(removeUndefinedProps({ ...swapAcceptedPacketBody, makerCltvDelta: 0 })),
+      new packets.SwapAcceptedPacket(removeUndefinedProps({ ...swapAcceptedPacketBody, makerCltvDelta: 0 }), uuid()),
     );
 
     const swapFailedPacketBody = {

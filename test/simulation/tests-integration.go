@@ -19,6 +19,10 @@ var integrationTestCases = []*testCase{
 		test: testOrderMatchingAndSwap,
 	},
 	{
+		name: "order matching and multi path swap",
+		test: testOrderMatchingAndMultiPathSwap,
+	},
+	{
 		name: "dust order discarded",
 		test: testDustOrderDiscarded,
 	},
@@ -356,6 +360,35 @@ func testOrderMatchingAndSwap(net *xudtest.NetworkHarness, ht *harnessTest) {
 	ht.act.disconnect(net.Alice, net.Bob)
 }
 
+func testOrderMatchingAndMultiPathSwap(net *xudtest.NetworkHarness, ht *harnessTest) {
+	// Connect Alice to Bob.
+	ht.act.connect(net.Alice, net.Bob)
+	ht.act.verifyConnectivity(net.Alice, net.Bob)
+
+	// Place an order on Alice.
+	req := &xudrpc.PlaceOrderRequest{
+		OrderId:  "multi_path_order",
+		Price:    0.02,
+		Quantity: 8600000,
+		PairId:   "LTC/BTC",
+		Side:     xudrpc.OrderSide_BUY,
+	}
+	ht.act.placeOrderAndBroadcast(net.Alice, net.Bob, req)
+
+	// Place a matching order on Bob.
+	req = &xudrpc.PlaceOrderRequest{
+		OrderId:  "multi_path_order",
+		Price:    req.Price,
+		Quantity: req.Quantity,
+		PairId:   req.PairId,
+		Side:     xudrpc.OrderSide_SELL,
+	}
+	ht.act.placeOrderAndSwap(net.Bob, net.Alice, req)
+
+	// Cleanup.
+	ht.act.disconnect(net.Alice, net.Bob)
+}
+
 func testDustOrderDiscarded(net *xudtest.NetworkHarness, ht *harnessTest) {
 	// Connect Alice to Bob.
 	ht.act.connect(net.Alice, net.Bob)
@@ -363,7 +396,7 @@ func testDustOrderDiscarded(net *xudtest.NetworkHarness, ht *harnessTest) {
 
 	// Place an order on Alice.
 	req := &xudrpc.PlaceOrderRequest{
-		OrderId:  "maker_order_id",
+		OrderId:  "dust_order",
 		Price:    0.02,
 		Quantity: 10000,
 		PairId:   "LTC/BTC",
@@ -373,7 +406,7 @@ func testDustOrderDiscarded(net *xudtest.NetworkHarness, ht *harnessTest) {
 
 	// Place a matching order on Bob.
 	req = &xudrpc.PlaceOrderRequest{
-		OrderId:  "taker_order_id",
+		OrderId:  "dust_order",
 		Price:    req.Price,
 		Quantity: 10099,
 		PairId:   req.PairId,

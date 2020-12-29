@@ -32,7 +32,7 @@ else
     echo "finished lnd clone"
 
     echo "starting lnd make..."
-    if ! (cd ${LND_PATH} && GOPATH=${GO_PATH} make tags="invoicesrpc"); then
+    if ! (cd ${LND_PATH} && GOPATH=${GO_PATH} make tags="invoicesrpc routerrpc"); then
         echo "unable to make lnd"
         exit 1
     fi

@@ -1,6 +1,7 @@
+import * as pb from '../../../proto/xudp2p_pb';
+import { removeUndefinedProps } from '../../../utils/utils';
 import Packet, { PacketDirection, ResponseType } from '../Packet';
 import PacketType from '../PacketType';
-import * as pb from '../../../proto/xudp2p_pb';
 
 // TODO: proper error handling
 export type SwapAcceptedPacketBody = {
@@ -9,6 +10,7 @@ export type SwapAcceptedPacketBody = {
   quantity: number;
   /** The CLTV delta from the current height that should be used to set the timelock for the final hop when sending to maker. */
   makerCltvDelta: number;
+  payReq?: string;
 };
 
 class SwapAcceptedPacket extends Packet<SwapAcceptedPacketBody> {
@@ -39,11 +41,12 @@ class SwapAcceptedPacket extends Packet<SwapAcceptedPacketBody> {
         id: obj.id,
         reqId: obj.reqId,
       },
-      body: {
+      body: removeUndefinedProps({
         rHash: obj.rHash,
         quantity: obj.quantity,
         makerCltvDelta: obj.makerCltvDelta,
-      },
+        payReq: obj.payReq || undefined,
+      }),
     });
   };
 
@@ -54,6 +57,9 @@ class SwapAcceptedPacket extends Packet<SwapAcceptedPacketBody> {
     msg.setRHash(this.body!.rHash);
     msg.setQuantity(this.body!.quantity);
     msg.setMakerCltvDelta(this.body!.makerCltvDelta);
+    if (this.body!.payReq) {
+      msg.setPayReq(this.body!.payReq);
+    }
 
     return msg.serializeBinary();
   };

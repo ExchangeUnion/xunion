@@ -3,11 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	// "github.com/ExchangeUnion/xud-simulation/connexttest"
-	// "github.com/ethereum/go-ethereum/ethclient"
-	"github.com/stretchr/testify/require"
 	"log"
-	// "net/http"
 	"os"
 	"strings"
 	"testing"
@@ -26,6 +22,7 @@ import (
 	btctest "github.com/roasbeef/btcd/integration/rpctest"
 	btcclient "github.com/roasbeef/btcd/rpcclient"
 	"github.com/roasbeef/btcutil"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -73,6 +70,10 @@ func TestIntegration(t *testing.T) {
 	carolDavidBtcChanPoint, err := openBtcChannel(ctx, xudNetwork.LndBtcNetwork, xudNetwork.Carol.LndBtcNode, xudNetwork.Dave.LndBtcNode, amt, pushAmt)
 	assert.NoError(err)
 	carolDavidLtcChanPoint, err := openLtcChannel(ctx, xudNetwork.LndLtcNetwork, xudNetwork.Carol.LndLtcNode, xudNetwork.Dave.LndLtcNode, amt, pushAmt)
+	assert.NoError(err)
+
+	// open a second LTC channel between alice and carol for multipath payments
+	aliceCarolLtcChanPoint, err := openLtcChannel(ctx, xudNetwork.LndLtcNetwork, xudNetwork.Alice.LndLtcNode, xudNetwork.Carol.LndLtcNode, amt, pushAmt)
 	assert.NoError(err)
 
 	initialStates := make(map[int]*xudrpc.GetInfoResponse)
@@ -129,6 +130,8 @@ func TestIntegration(t *testing.T) {
 	err = closeBtcChannel(ctx, xudNetwork.LndBtcNetwork, xudNetwork.Alice.LndBtcNode, aliceBobBtcChanPoint, false)
 	assert.NoError(err)
 	err = closeLtcChannel(ctx, xudNetwork.LndLtcNetwork, xudNetwork.Alice.LndLtcNode, aliceBobLtcChanPoint, false)
+	assert.NoError(err)
+	err = closeLtcChannel(ctx, xudNetwork.LndLtcNetwork, xudNetwork.Alice.LndLtcNode, aliceCarolLtcChanPoint, false)
 	assert.NoError(err)
 	err = closeBtcChannel(ctx, xudNetwork.LndBtcNetwork, xudNetwork.Bob.LndBtcNode, bobCarolBtcChanPoint, false)
 	assert.NoError(err)

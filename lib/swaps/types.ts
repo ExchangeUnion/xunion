@@ -61,6 +61,8 @@ export type SwapDeal = {
   executeTime?: number;
   /** The time when the swap either completed successfully or failed. */
   completeTime?: number;
+  /** The payment request from the counterparty. */
+  payReq?: string;
 };
 
 /** The result of a successful swap. */

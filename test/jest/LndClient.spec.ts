@@ -270,13 +270,16 @@ describe('LndClient', () => {
         });
       });
 
+      const expectedOutbound = 100 + 80 + 110 - 2 - 2 - 20; // 266
+      const expectedInbound = 200 + 220 + 300 - 5 - 5 - 5; // 705
+
       const swapCapacities = await lnd.swapCapacities();
-      expect(swapCapacities.maxOutboundChannelCapacity).toEqual(98);
-      expect(swapCapacities.maxInboundChannelCapacity).toEqual(295);
+      expect(swapCapacities.maxOutboundChannelCapacity).toEqual(expectedOutbound);
+      expect(swapCapacities.maxInboundChannelCapacity).toEqual(expectedInbound);
 
       expect(lnd['listChannels']).toHaveBeenCalledTimes(1);
-      expect(lnd['maxChannelOutboundAmount']).toEqual(98);
-      expect(lnd['maxChannelInboundAmount']).toEqual(295);
+      expect(lnd['totalOutboundAmount']).toEqual(expectedOutbound);
+      expect(lnd['totalInboundAmount']).toEqual(expectedInbound);
     });
   });
 });

@@ -1,6 +1,7 @@
+import { removeUndefinedProps } from '../../../utils/utils';
+import * as pb from '../../../proto/xudp2p_pb';
 import Packet, { PacketDirection, ResponseType } from '../Packet';
 import PacketType from '../PacketType';
-import * as pb from '../../../proto/xudp2p_pb';
 
 export type SwapRequestPacketBody = {
   proposedQuantity: number;
@@ -8,6 +9,7 @@ export type SwapRequestPacketBody = {
   orderId: string;
   rHash: string;
   takerCltvDelta: number;
+  payReq?: string;
 };
 
 class SwapRequestPacket extends Packet<SwapRequestPacketBody> {
@@ -35,13 +37,14 @@ class SwapRequestPacket extends Packet<SwapRequestPacketBody> {
   private static convert = (obj: pb.SwapRequestPacket.AsObject): SwapRequestPacket => {
     return new SwapRequestPacket({
       header: { id: obj.id },
-      body: {
+      body: removeUndefinedProps({
         proposedQuantity: obj.proposedQuantity,
         pairId: obj.pairId,
         orderId: obj.orderId,
         rHash: obj.rHash,
         takerCltvDelta: obj.takerCltvDelta,
-      },
+        payReq: obj.payReq || undefined,
+      }),
     });
   };
 
@@ -53,6 +56,9 @@ class SwapRequestPacket extends Packet<SwapRequestPacketBody> {
     msg.setOrderId(this.body!.orderId);
     msg.setRHash(this.body!.rHash);
     msg.setTakerCltvDelta(this.body!.takerCltvDelta);
+    if (this.body!.payReq) {
+      msg.setPayReq(this.body!.payReq);
+    }
 
     return msg.serializeBinary();
   };

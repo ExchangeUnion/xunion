@@ -257,6 +257,9 @@ func (n *NetworkHarness) SetUp(lndArgs []string) error {
 	if err := n.ConnectNodes(ctxb, n.Alice, n.Bob); err != nil {
 		return err
 	}
+	if err := n.ConnectNodes(ctxb, n.Alice, n.Carol); err != nil {
+		return err
+	}
 	if err := n.ConnectNodes(ctxb, n.Bob, n.Carol); err != nil {
 		return err
 	}

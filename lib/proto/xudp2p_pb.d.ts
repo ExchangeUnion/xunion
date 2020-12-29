@@ -596,6 +596,9 @@ export class SwapRequestPacket extends jspb.Message {
     getTakerCltvDelta(): number;
     setTakerCltvDelta(value: number): void;
 
+    getPayReq(): string;
+    setPayReq(value: string): void;
+
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): SwapRequestPacket.AsObject;
@@ -615,6 +618,7 @@ export namespace SwapRequestPacket {
         orderId: string,
         rHash: string,
         takerCltvDelta: number,
+        payReq: string,
     }
 }
 
@@ -634,6 +638,9 @@ export class SwapAcceptedPacket extends jspb.Message {
     getMakerCltvDelta(): number;
     setMakerCltvDelta(value: number): void;
 
+    getPayReq(): string;
+    setPayReq(value: string): void;
+
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): SwapAcceptedPacket.AsObject;
@@ -652,6 +659,7 @@ export namespace SwapAcceptedPacket {
         rHash: string,
         quantity: number,
         makerCltvDelta: number,
+        payReq: string,
     }
 }
 

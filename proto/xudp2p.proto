@@ -124,6 +124,7 @@ message SwapRequestPacket {
     string order_id = 4;
     string r_hash = 5;
     uint32 taker_cltv_delta = 6;
+    string pay_req = 7;
 }
 
 message SwapAcceptedPacket {
@@ -132,6 +133,7 @@ message SwapAcceptedPacket {
     string r_hash = 3;
     double quantity = 4;
     uint32 maker_cltv_delta = 5;
+    string pay_req = 6;
 }
 
 message SwapFailedPacket {

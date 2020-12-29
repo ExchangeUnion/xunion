@@ -91,8 +91,8 @@ abstract class SwapClient extends EventEmitter {
   public static readonly RECONNECT_INTERVAL = 5000;
   protected status: ClientStatus = ClientStatus.NotInitialized;
   protected reconnectionTimer?: NodeJS.Timer;
+  protected updateCapacityTimer?: NodeJS.Timer;
 
-  private updateCapacityTimer?: NodeJS.Timer;
   /** The maximum amount of time we will wait for the connection to be verified during initialization. */
   private static INITIALIZATION_TIME_LIMIT = 5000;
   /** Time in milliseconds between updating the maximum outbound capacity. */
@@ -319,7 +319,7 @@ abstract class SwapClient extends EventEmitter {
     units: bigint;
     expiry?: number;
     currency?: string;
-  }): Promise<void>;
+  }): Promise<string | undefined>;
 
   public abstract async settleInvoice(rHash: string, rPreimage: string, currency?: string): Promise<void>;
 

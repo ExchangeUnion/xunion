@@ -101,11 +101,13 @@ describe('Swaps.Integration', () => {
     swapClientManager = sandbox.createStubInstance(SwapClientManager) as any;
     swapClientManager['swapClients'] = new Map<string, SwapClient>();
     const btcSwapClient = sandbox.createStubInstance(SwapClient) as any;
+    btcSwapClient['addInvoice'] = async () => {};
     btcSwapClient['removeInvoice'] = async () => {};
     btcSwapClient.getRoute = getRouteResponse;
     btcSwapClient.isConnected = () => true;
     swapClientManager['swapClients'].set('BTC', btcSwapClient);
     const ltcSwapClient = sandbox.createStubInstance(SwapClient) as any;
+    ltcSwapClient['addInvoice'] = async () => {};
     ltcSwapClient['removeInvoice'] = async () => {};
     ltcSwapClient.isConnected = () => true;
     ltcSwapClient.getRoute = getRouteResponse;

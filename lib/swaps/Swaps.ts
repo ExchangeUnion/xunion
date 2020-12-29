@@ -471,19 +471,34 @@ class Swaps extends EventEmitter {
     const clientType = this.swapClientManager.get(makerCurrency)!.type;
     const destination = peer.getIdentifier(clientType, makerCurrency)!;
 
-    const takerCltvDelta = this.swapClientManager.get(takerCurrency)!.finalLock;
+    const takerSwapClient = this.swapClientManager.get(takerCurrency)!;
+    const takerCltvDelta = takerSwapClient.finalLock;
 
     const { rPreimage, rHash } = await generatePreimageAndHash();
+    // TODO: once we can specify PaymentAddr on lnd invoices, we can move the add
+    // invoice step back to after the swap has been accepted
+    const payReq = await takerSwapClient.addInvoice({
+      rHash,
+      units: takerUnits,
+      expiry: takerCltvDelta,
+      currency: takerCurrency,
+    });
+
     const swapRequestBody: packets.SwapRequestPacketBody = {
       takerCltvDelta,
       rHash,
+      payReq,
       orderId: maker.id,
       pairId: maker.pairId,
       proposedQuantity: taker.quantity,
     };
 
     const deal: SwapDeal = {
-      ...swapRequestBody,
+      rHash,
+      orderId: maker.id,
+      pairId: maker.pairId,
+      proposedQuantity: taker.quantity,
+      takerCltvDelta,
       rPreimage,
       takerCurrency,
       makerCurrency,
@@ -534,7 +549,7 @@ class Swaps extends EventEmitter {
     // TODO: consider the time gap between taking the routes and using them.
     this.logger.debug(`trying to accept deal: ${JSON.stringify(orderToAccept)} from xudPubKey: ${peer.nodePubKey}`);
 
-    const { rHash, proposedQuantity, pairId, takerCltvDelta, orderId } = requestPacket.body!;
+    const { rHash, proposedQuantity, pairId, takerCltvDelta, orderId, payReq } = requestPacket.body!;
     const reqId = requestPacket.header.id;
     if (this.usedHashes.has(rHash)) {
       await this.sendErrorToPeer({
@@ -610,6 +625,7 @@ class Swaps extends EventEmitter {
       makerUnits,
       takerUnits,
       takerCltvDelta,
+      payReq,
       takerPubKey: takerIdentifier,
       destination: takerIdentifier,
       peerPubKey: peer.nodePubKey!,
@@ -718,8 +734,9 @@ class Swaps extends EventEmitter {
       return false;
     }
 
+    let makerPayReq: string | undefined;
     try {
-      await makerSwapClient.addInvoice({
+      makerPayReq = await makerSwapClient.addInvoice({
         rHash: deal.rHash,
         units: deal.makerUnits,
         expiry: deal.makerCltvDelta,
@@ -744,6 +761,7 @@ class Swaps extends EventEmitter {
       rHash,
       makerCltvDelta: deal.makerCltvDelta || 1,
       quantity: proposedQuantity,
+      payReq: makerPayReq,
     };
 
     this.emit('swap.accepted', {
@@ -849,7 +867,7 @@ class Swaps extends EventEmitter {
    */
   private handleSwapAccepted = async (responsePacket: packets.SwapAcceptedPacket, peer: Peer) => {
     assert(responsePacket.body, 'SwapAcceptedPacket does not contain a body');
-    const { quantity, rHash, makerCltvDelta } = responsePacket.body;
+    const { quantity, rHash, makerCltvDelta, payReq } = responsePacket.body;
     const deal = this.getDeal(rHash);
     if (!deal) {
       this.logger.warn(`received swap accepted for unrecognized deal: ${rHash}`);
@@ -877,6 +895,8 @@ class Swaps extends EventEmitter {
 
     // update deal with maker's cltv delta
     deal.makerCltvDelta = makerCltvDelta;
+
+    deal.payReq = payReq;
 
     if (quantity) {
       deal.quantity = quantity; // set the accepted quantity for the deal
@@ -917,6 +937,9 @@ class Swaps extends EventEmitter {
       return;
     }
 
+    // TODO: re-enable add invoice *after* swap accepted once we are able to specify the
+    // PaymentAddr to lnd upon invoice creation
+    /*
     try {
       await takerSwapClient.addInvoice({
         rHash: deal.rHash,
@@ -934,6 +957,7 @@ class Swaps extends EventEmitter {
       });
       return;
     }
+*/
 
     // persist the deal to the database before we attempt to send
     await this.setDealPhase(deal, SwapPhase.SendingPayment);
@@ -1419,7 +1443,10 @@ class Swaps extends EventEmitter {
         const swapClient = this.swapClientManager.get(deal.makerCurrency)!;
         swapClient.removeInvoice(deal.rHash).catch(this.logger.error); // we don't need to await the remove invoice call
       }
-    } else if (deal.phase === SwapPhase.SendingPayment) {
+      // TODO: go back to only canceling invoice on SendingPayment phase as taker
+      // once we resume adding invoice *after* swap deal is accepted
+      // } else if (deal.phase === SwapPhase.SendingPayment) {
+    } else {
       const swapClient = this.swapClientManager.get(deal.takerCurrency)!;
       swapClient.removeInvoice(deal.rHash).catch(this.logger.error); // we don't need to await the remove invoice call
     }
